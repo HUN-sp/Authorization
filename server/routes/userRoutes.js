@@ -1,78 +1,90 @@
 const express = require("express");
 const User = require("../models/userModel");
-const bcrypt = require("bcrypt");
-
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const authMiddleware = require('../middlewares/authmiddleware');
 const router = express.Router();
 
 router.post("/register", async (req, res) => {
     try {
+
         const userExists = await User.findOne({ email: req.body.email });
+
         if (userExists) {
-            return res.status(400).json({ // It's good practice to use a 400 status code for client errors
+            return res.status(400).json({
                 success: false,
-                message: "User already exists"
+                message: "User Already exists"
             });
         }
-        const salt = await bcrypt.genSalt(10)
-        const tempPass =  await bcrypt.hash(req.body.password , salt);
-        req.body.password = tempPass;
+
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(req.body.password, salt);
+        req.body.password = hashedPassword;
 
         const newUser = new User(req.body);
-        await newUser.save(); // Save the new user to the database
-        return res.status(201).json({ // Also good to return JSON here for consistency
-            success: true,
-            message: "User registered successfully"
+        await newUser.save();
+
+        return res.status(201).json({
+            success : true,
+            message : 'You have successfully signed up,please log in'
         });
+
     } catch (error) {
-        return res.status(500).json({ // Sending JSON response with error message
+        return res.status(500).json({
             success: false,
-            message: error.message
+            message: 'Internal server error',
+            error: error.message
         });
     }
 });
 
 // Placeholder for login route
 router.post("/login", async (req, res) => {
+    const user = await User.findOne({email : req.body.email});
 
-    //check if user exists of not
-    const user = await User.findOne({email:req.body.email})
-    //if no user by that email
     if(!user){
-        res.send({
-            sucess: false,
-            message:"User doesnt exist , please register"
-        })
-    }
-
-
-
-    //check if password if correct opr not
-    const validPassword = await bcrypt.compare(req.body.password, user.password);
-    if(!validPassword){
-        res.send({
-            success: false,
-            message: "Invalid pass"
-        })
-    }else {
-        res.send({
-            success: true,
-            message:"login successful"
-        })
-    }
-
-});
-
-// Get all users
-router.get("/", async (req, res) => {
-    try {
-        const users = await User.find();
-        res.status(200).json(users);
-    } catch (err) {
-        res.status(500).json({ // Consistently return JSON in error responses
-            success: false,
-            message: err.message
+         res.status(404).json({
+            success : false,
+            mesaage : 'User Already Exists',
         });
     }
+
+    const validPassword = await bcrypt.compare(req.body.password, user.password)
+
+    if(!validPassword){
+         res.status(400).json({
+            success : false,
+            message :'Invalid Password'
+        })
+
+    }
+
+    const token = jwt.sign({userId : user._id}, process.env.JWT_SECRET, {expiresIn : "1d"});
+
+    res.send({
+        success : true,
+        message :'User logged in Successfully',
+        token : token
+    })
+
 });
+
+router.get('/get-current-user', authMiddleware, async (req, res) =>{
+    const user = await  User.findById(req.body.userId).select('-password');
+    try {
+        res.send({
+            success : true,
+            message: 'You are Authorized',
+            data : user 
+        })
+
+    } catch (error) {
+        res.send({
+            success : false,
+            message : 'Not authorized'
+        })
+    }
+});
+
 
 module.exports = router;
